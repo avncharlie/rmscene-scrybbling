@@ -16,16 +16,24 @@ New features:
   (`SceneImageItemBlock`, scene item type `0x07`), used for images inserted on
   the device since reMarkable software version 3.27 ("captures"). The info
   block declares image assets by UUID together with the PNG filename backing
-  them; the item block places a declared asset as a quad of `(x, y, u, v)`
-  vertices. The PNG itself lives alongside the page, at
+  them. The item block places a declared asset as a quad of `ImageVertex`
+  corners, each carrying scene coordinates `x`, `y` and texture coordinates
+  `u`, `v`. The PNG itself lives alongside the page, at
   `<documentId>/<pageId>/<imageId>.png`.
   Based on [#54](https://github.com/ricklupton/rmscene/pull/54)
-- Store `SceneImageInfoBlock` on `SceneTree` as `image_info`, and resolve each
-  placement's `filename` when building the tree
+- Store `SceneImageInfoBlock` on `SceneTree` as `image_info`, and add
+  `SceneTree.image_filename()` to resolve a placement's filename. Building a
+  tree also fills in `Image.filename` for convenience
+- Add `Image.asset_id`, which rebuilds the asset UUID from its mixed-endian
+  bytes, and `Image.bounding_rect()`
 - Store `SceneInfo` on `SceneTree` as `scene_info`
 
 Fixes:
 
+- Stop corrupting pages that contain images. Because blocks `0x0E` and `0x0F`
+  were previously unreadable, reading and writing a page back rewrote their
+  headers with the default version `(1, 1)` rather than the versions the device
+  had written
 - Fix `_read_optional` leaving the stream misaligned when an absent optional
   field is followed by bytes that decode to an invalid tag type. Previously the
   resulting `ValueError` escaped uncaught and without rewinding, so the first
