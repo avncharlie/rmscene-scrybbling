@@ -111,9 +111,20 @@ class TaggedBlockReader:
     ## Read simple values -- optional variants
 
     def _read_optional(self, func, index, default):
+        # Record the position so that a failed read leaves the stream where it
+        # started. `read_tag` rewinds itself before raising UnexpectedBlockError,
+        # but it can only do that once the tag has been decoded: when the bytes
+        # that follow an absent optional field happen to decode to an invalid
+        # tag type, `_read_tag_values` raises a bare ValueError having already
+        # consumed the varuint. Without rewinding here, the stream is left past
+        # the end of the block and the whole block is discarded as unreadable.
+        pos = self.data.tell()
         try:
             return func(index)
         except (UnexpectedBlockError, EOFError):
+            return default
+        except ValueError:
+            self.data.data.seek(pos)
             return default
 
     def read_id_optional(

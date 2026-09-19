@@ -507,6 +507,58 @@ def test_read_tree_with_images():
     assert images[0].asset_id == IMAGE_ASSET_ID
 
 
+def test_two_consecutive_image_blocks_round_trip():
+    """Two image placements in a row must both survive being read from bytes.
+
+    `Image` ends with an optional `move_id`. When it is absent, the reader
+    looks for its tag and instead meets the first bytes of the *next* block.
+    Those can decode to an invalid tag type, which raised a bare ValueError
+    that escaped `_read_optional` without rewinding the stream, so the first
+    of the two blocks was discarded as an UnreadableBlock.
+
+    The in-memory `build_tree` tests cannot catch this: it only shows up once
+    the blocks are serialised and read back.
+    """
+    second_asset = UUID("c9a16baa-d88a-b7fc-ab4a-d77f6c67637c")
+    blocks = image_blocks(
+        {
+            **DECLARED_IMAGE,
+            second_asset: si.ImageInfo(
+                filename=LwwValue(CrdtId(1, 25), "second.png"),
+                flags=LwwValue(CrdtId(0, 0), b"\x11\x00"),
+            ),
+        }
+    )
+    blocks.append(
+        SceneImageItemBlock(
+            parent_id=CrdtId(0, 11),
+            item=CrdtSequenceItem(
+                item_id=CrdtId(1, 30),
+                left_id=CrdtId(1, 20),
+                right_id=CrdtId(0, 0),
+                deleted_length=0,
+                value=si.Image(
+                    uuid=LwwValue(CrdtId(1, 32), second_asset.bytes_le),
+                    vertices=[si.ImageVertex(1.0, 2.0, 0.0, 1.0)] * 4,
+                    timestamp=CrdtId(1, 31),
+                ),
+            ),
+        )
+    )
+
+    buf = BytesIO()
+    write_blocks(buf, blocks)
+    buf.seek(0)
+
+    read_back = list(read_blocks(buf))
+    assert not [b for b in read_back if isinstance(b, UnreadableBlock)]
+
+    buf.seek(0)
+    tree = read_tree(buf)
+    images = [i for i in tree.walk() if isinstance(i, si.Image)]
+    assert [i.filename for i in images] == [IMAGE_FILENAME, "second.png"]
+
+
 def test_image_filename_resolved_when_info_block_comes_last():
     """Resolution must not depend on where the info block lands in the file."""
     tree = SceneTree()
